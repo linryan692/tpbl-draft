@@ -1,47 +1,57 @@
+// src/main/java/com/tpbl/model/Team.java
 package com.tpbl.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
+import java.util.Collection;
+import java.util.List;
 
 @Entity
-@Table(
-  name = "team",
-  uniqueConstraints = @UniqueConstraint(columnNames = "username")
-)
-@Getter
-@Setter
+@Table(name = "team", uniqueConstraints = @UniqueConstraint(columnNames = "username"))
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class Team {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+public class Team implements UserDetails {
+    @Id @GeneratedValue
     private Long id;
-
-    /** 是否仍在選秀中 */
-    @Column(nullable = false)
     private boolean active;
-
-    /** 球隊中文名稱 */
-    @Column(nullable = false)
     private String name;
-
-    /** 登入用帳號 (唯一) */
-    @Column(nullable = false, unique = true)
+    private String password;
     private String username;
 
-    /** BCrypt 加密後密碼 */
-    @Column(nullable = false)
-    private String password;
-
-    /**
-     * --- 新增的輔助建構子 ---
-     * 讓 DataInitializer 能繼續呼叫 new Team(null, name, true)
-     */
-    public Team(Long id, String name, boolean active) {
+    // 方便 DataInitializer 調用
+    public Team(Long id, String name, boolean active, String username, String password) {
         this.id = id;
         this.name = name;
         this.active = active;
+        this.username = username;
+        this.password = password;
     }
+
+    // --- UserDetails methods ---
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return List.of(() -> "ROLE_USER");
+    }
+
+    @Override
+    public String getPassword() { return password; }
+
+    @Override
+    public String getUsername() { return username; }
+
+    @Override
+    public boolean isAccountNonExpired() { return active; }
+
+    @Override
+    public boolean isAccountNonLocked() { return active; }
+
+    @Override
+    public boolean isCredentialsNonExpired() { return active; }
+
+    @Override
+    public boolean isEnabled() { return active; }
 }

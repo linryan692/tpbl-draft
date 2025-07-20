@@ -2,6 +2,7 @@
 package com.tpbl.config;
 
 import com.tpbl.websocket.DraftWebSocketHandler;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.*;
 
@@ -9,16 +10,15 @@ import org.springframework.web.socket.config.annotation.*;
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
 
-    private final DraftWebSocketHandler draftWebSocketHandler;
-
-    public WebSocketConfig(DraftWebSocketHandler draftWebSocketHandler) {
-        this.draftWebSocketHandler = draftWebSocketHandler;
-    }
+    @Autowired
+    private DraftWebSocketHandler draftWebSocketHandler;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry
           .addHandler(draftWebSocketHandler, "/ws/draft")
-          .setAllowedOrigins("*");
+          .setAllowedOrigins("*")
+          // 把 Spring Security Context 放到 session attributes 裡面
+          .addInterceptors(new org.springframework.web.socket.server.support.HttpSessionHandshakeInterceptor());
     }
 }
