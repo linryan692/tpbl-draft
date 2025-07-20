@@ -8,6 +8,7 @@ import java.util.Optional;
 
 public interface TeamRepository extends JpaRepository<Team, Long> {
     // 問多少個 username
+    long countByName(String name);
     long countByUsername(String username);
 
     // 用 username 找 Team，給 Security 用

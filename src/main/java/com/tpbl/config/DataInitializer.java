@@ -14,29 +14,41 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 public class DataInitializer {
 
     @Bean
-    CommandLineRunner initData(TeamRepository teamRepo,
-                               PlayerRepository playerRepo,
-                               PasswordEncoder encoder) {
+    public CommandLineRunner initData(TeamRepository teamRepo,
+                                      PlayerRepository playerRepo,
+                                      PasswordEncoder encoder) {
         return args -> {
-            // 8 支球隊
+            // （1）8 支球隊，密碼統一 "password"
             String[][] teams = {
-                { "崇越隼鷹", "cy" },
-                { "Lamigo桃猿", "lm" },
-                { "國泰犀牛", "ct" },
-                { "遠東獵狐", "yd" },
-                { "華碩天際龍", "asus" },
-                { "三商虎", "ss" },
-                { "富邦悍將", "fb" },
-                { "統一獅", "uni" }
+                { "崇越隼鷹", "cy"  },
+                { "Lamigo桃猿", "lm"  },
+                { "國泰犀牛", "ct"  },
+                { "遠東獵狐", "yd"  },
+                { "華碩天際龍", "asus"},
+                { "三商虎",   "ss"  },
+                { "富邦悍將", "fb"  },
+                { "統一獅",   "uni" }
             };
             for (var t : teams) {
-                String name = t[0], username = t[1];
-                if (teamRepo.countByUsername(username)==0) {
-                    String pwd = encoder.encode("password");
-                    teamRepo.save(new Team(null, true, name, username, pwd));
+                String name     = t[0];
+                String username = t[1];
+                if (teamRepo.countByUsername(username) == 0) {
+                    // encode 一律用 "password"
+                    String encodedPwd = encoder.encode("password");
+                    // 注意跟 Team 构造函数的参数顺序：id, name, active, username, password
+                    Team team = new Team(
+                        null,
+                        name,
+                        true,
+                        username,
+                        encodedPwd
+                    );
+                    teamRepo.save(team);
                 }
             }
-            // players-pool.json 載入略……
+
+            // （2）这里再加载 players-pool.json，你原来略掉就继续写
+            // …
         };
     }
 }

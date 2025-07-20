@@ -1,11 +1,12 @@
 // src/main/java/com/tpbl/config/TeamUserDetailsService.java
 package com.tpbl.config;
-
+import org.springframework.context.annotation.Primary; 
 import com.tpbl.repo.TeamRepository;
 import org.springframework.security.core.userdetails.*;
 import org.springframework.stereotype.Service;
 
 @Service
+@Primary
 public class TeamUserDetailsService implements UserDetailsService {
     private final TeamRepository repo;
     public TeamUserDetailsService(TeamRepository repo) { this.repo = repo; }

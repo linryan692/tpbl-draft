@@ -1,4 +1,3 @@
-// src/main/java/com/tpbl/service/DraftService.java
 package com.tpbl.service;
 
 import com.tpbl.model.Pick;
@@ -16,12 +15,10 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class DraftService {
-
     private final TeamRepository teamRepo;
     private final PlayerRepository playerRepo;
     private final PickRepository pickRepo;
