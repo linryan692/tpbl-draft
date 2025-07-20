@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>TPBL 選秀系統</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    .team, .players, .picks { margin-bottom: 20px; }
+    button { margin: 4px; padding: 6px 12px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border:1px solid #ccc; padding: 6px; text-align: center; }
+    th { background: #f5f5f5; }
+    caption { caption-side: top; margin-bottom: 8px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>TPBL 選秀系統</h1>
+
+  <div class="team">
+    <h2>目前輪到：</h2>
+    <div id="current-team">載入中…</div>
+    <button id="pass-btn" disabled>放棄</button>
+  </div>
+
+  <div class="players">
+    <h2>可選球員</h2>
+    <div id="players-list">載入中…</div>
+  </div>
+
+  <div class="picks">
+    <h2>已選紀錄</h2>
+    <div id="picks-table-container">載入中…</div>
+  </div>
+
+  <script>
+    const currentEl = document.getElementById('current-team');
+    const playersEl = document.getElementById('players-list');
+    const tableCon  = document.getElementById('picks-table-container');
+    const passBtn   = document.getElementById('pass-btn');
+
+    let ws;
+    let currentTeamId;
+    let allTeams = null; // 用來存最初的 8 支隊，不會隨「放棄」而改變
+
+    function initWebSocket() {
+      ws = new WebSocket(`ws://${location.host}/ws/draft`);
+      ws.onopen    = () => console.log('WS 已連線');
+      ws.onerror   = err => console.error('WS 錯誤', err);
+      ws.onclose   = () => console.log('WS 已關閉');
+      ws.onmessage = e => handleEvent(JSON.parse(e.data));
+    }
+
+    function handleEvent(evt) {
+      const { type, data } = evt;
+      switch(type) {
+        case 'FULL_STATUS':
+          renderFullStatus(data);
+          break;
+        case 'NEXT_TURN':
+          updateCurrent(data);
+          break;
+        case 'DRAFT_ENDED':
+          currentEl.textContent = '選秀結束';
+          playersEl.innerHTML = '';
+          passBtn.disabled = true;
+          break;
+      }
+    }
+
+    function renderFullStatus(status) {
+      // 第一次收到時，初始化 allTeams
+      if (!allTeams && status.teams) {
+        allTeams = status.teams.slice();
+      }
+      // 1) 更新目前輪到
+      updateCurrent(status.currentTeam);
+      // 2) 按位置渲染可選球員
+      renderPlayersByPosition(status.availablePlayers);
+      // 3) 用固定 allTeams 渲染 picks 表格
+      renderPicksTable(allTeams, status.picks);
+    }
+
+    function updateCurrent(team) {
+      if (team) {
+        currentTeamId = team.id;
+        currentEl.textContent = `${team.id} - ${team.name}`;
+        passBtn.disabled = false;
+      } else {
+        currentEl.textContent = '選秀結束';
+        passBtn.disabled = true;
+      }
+    }
+
+    function renderPlayersByPosition(list) {
+      // group by position
+      const grouped = list.reduce((acc, p) => {
+        (acc[p.position] = acc[p.position]||[]).push(p);
+        return acc;
+      }, {});
+      playersEl.innerHTML = '';
+      Object.entries(grouped).forEach(([pos, arr]) => {
+        const div = document.createElement('div');
+        div.innerHTML = `<strong>${pos} (${arr.length})</strong>`;
+        arr.forEach(p => {
+          const btn = document.createElement('button');
+          btn.textContent = `${p.id}:${p.name}`;
+          btn.onclick = () => ws.send(JSON.stringify({ teamId: currentTeamId, playerId: p.id }));
+          div.appendChild(btn);
+        });
+        playersEl.appendChild(div);
+      });
+    }
+
+    function renderPicksTable(teams, picks) {
+      if (!teams) return;
+      const maxRound = picks.length
+        ? Math.max(...picks.map(p=>p.round))
+        : 0;
+      const grid = [];
+      for (let r = 1; r <= maxRound; r++) {
+        const row = teams.map(_=>null);
+        picks.filter(p=>p.round === r).forEach(pick => {
+          const idx = teams.findIndex(t=>t.id === pick.team.id);
+          row[idx] = pick.player === null
+            ? '放棄'
+            : pick.player; // 傳的是整個 object
+        });
+        grid.push({round: r, row});
+      }
+
+      // 建表格
+      const tbl = document.createElement('table');
+      const thead = document.createElement('thead');
+      thead.innerHTML =
+        `<tr><th>輪次</th>` +
+        teams.map(t=>`<th>${t.name}</th>`).join('') +
+        `</tr>`;
+      tbl.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      grid.forEach(({round, row}) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          `<td>${round}</td>` +
+          row.map(cell => {
+            let text = '';
+            if (cell === '放棄') {
+              text = '放棄';
+            } else if (cell && cell.name) {
+              text = cell.name;
+            }
+            return `<td>${text}</td>`;
+          }).join('');
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+
+      tableCon.innerHTML = '';
+      tableCon.appendChild(tbl);
+    }
+
+    passBtn.onclick = () =>
+      ws.send(JSON.stringify({ teamId: currentTeamId, playerId: null }));
+
+    initWebSocket();
+  </script>
+</body>
+</html>
