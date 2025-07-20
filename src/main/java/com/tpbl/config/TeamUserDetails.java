@@ -16,7 +16,6 @@ public class TeamUserDetails implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        // 如果不需要角色，可回空集合
         return java.util.Collections.emptyList();
     }
 
@@ -30,23 +29,8 @@ public class TeamUserDetails implements UserDetails {
         return team.getUsername();
     }
 
-    @Override
-    public boolean isAccountNonExpired() {
-        return true;
-    }
-
-    @Override
-    public boolean isAccountNonLocked() {
-        return true;
-    }
-
-    @Override
-    public boolean isCredentialsNonExpired() {
-        return true;
-    }
-
-    @Override
-    public boolean isEnabled() {
-        return team.isActive();
-    }
+    @Override public boolean isAccountNonExpired()     { return true; }
+    @Override public boolean isAccountNonLocked()      { return true; }
+    @Override public boolean isCredentialsNonExpired(){ return true; }
+    @Override public boolean isEnabled()               { return team.isActive(); }
 }

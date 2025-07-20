@@ -1,24 +1,22 @@
-// src/main/java/com/tpbl/config/TeamUserDetailsService.java
 package com.tpbl.config;
-import org.springframework.context.annotation.Primary; 
+
+import com.tpbl.model.Team;
 import com.tpbl.repo.TeamRepository;
-import org.springframework.security.core.userdetails.*;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 @Service
-@Primary
+@RequiredArgsConstructor
 public class TeamUserDetailsService implements UserDetailsService {
-    private final TeamRepository repo;
-    public TeamUserDetailsService(TeamRepository repo) { this.repo = repo; }
+    private final TeamRepository teamRepo;
 
     @Override
-    public UserDetails loadUserByUsername(String username)
-            throws UsernameNotFoundException {
-        return repo.findByUsername(username)
-            .map(t -> User.withUsername(t.getUsername())
-                          .password(t.getPassword())
-                          .roles("TEAM")
-                          .build())
-            .orElseThrow(() -> new UsernameNotFoundException("找不到隊伍："+username));
+    public UserDetails loadUserByUsername(String username) {
+        Team team = teamRepo.findByUsername(username)
+            .orElseThrow(() -> new UsernameNotFoundException("Team not found: " + username));
+        return new TeamUserDetails(team);
     }
 }

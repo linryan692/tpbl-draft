@@ -1,4 +1,3 @@
-// src/main/java/com/tpbl/controller/LoginController.java
 package com.tpbl.controller;
 
 import org.springframework.stereotype.Controller;

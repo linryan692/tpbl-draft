@@ -5,19 +5,24 @@
 <head>
   <meta charset="UTF-8" />
   <title>TPBL 選秀系統</title>
-  <style>/* … 你的原有 CSS … */</style>
 </head>
 <body>
-
   <h1>TPBL 選秀系統</h1>
 
-  <!-- 只有登录后才让前端逻辑跑 -->
+  <!-- 未登录时提示 -->
+  <sec:authorize access="!isAuthenticated()">
+    <p>請先 <a th:href="@{/login}">登入</a> 再查看選秀頁面。</p>
+  </sec:authorize>
+
+  <!-- 登录后才显示选秀界面 -->
   <sec:authorize access="isAuthenticated()">
-    <!-- 把 team.id 放到前端全局变量 -->
+
+    <!-- 全局变量注入（Thymeleaf inline JavaScript） -->
     <script th:inline="javascript">
       /*<![CDATA[*/
-      window.CURRENT_TEAM_ID = /*[[${team.id}]]*/ 0;
-      window.ALL_TEAMS       = /*[[${#objects.toJson(teams)}]]*/ [];
+      window.CURRENT_TEAM_ID   = /*[[${teamId}]]*/ 0;
+      window.CURRENT_TEAM_NAME = '/*[[${teamName}]]*/–';
+      window.ALL_TEAMS         = /*[[${#objects.toJson(teams)}]]*/ [];
       /*]]>*/
     </script>
 
@@ -36,64 +41,120 @@
       <h2>已選紀錄</h2>
       <div id="picks-table-container">載入中…</div>
     </div>
-  </sec:authorize>
 
-  <sec:authorize access="!isAuthenticated()">
-    <p>請先 <a th:href="@{/login}">登入</a> 再查看選秀頁面。</p>
-  </sec:authorize>
+    <script>
+      const currentEl   = document.getElementById('current-team');
+      const playersEl   = document.getElementById('players-list');
+      const tableCon    = document.getElementById('picks-table-container');
+      const passBtn     = document.getElementById('pass-btn');
+      let ws, currentTeamId = window.CURRENT_TEAM_ID;
+      const teams = window.ALL_TEAMS;
 
-  <script>
-    // 下面的 WS + 渲染逻辑可以保持不变，
-    // 只是 currentTeamId 改成从 window.CURRENT_TEAM_ID 读取
-    const currentEl   = document.getElementById('current-team');
-    const playersEl   = document.getElementById('players-list');
-    const tableCon    = document.getElementById('picks-table-container');
-    const passBtn     = document.getElementById('pass-btn');
+      function initWebSocket() {
+        ws = new WebSocket(`ws://${location.host}/ws/draft`);
+        ws.onopen    = () => console.log('WS 已連線');
+        ws.onerror   = e => console.error('WS 錯誤', e);
+        ws.onclose   = () => console.log('WS 已關閉');
+        ws.onmessage = e => handleEvent(JSON.parse(e.data));
+      }
 
-    let ws, currentTeamId = window.CURRENT_TEAM_ID;
-    const teams = window.ALL_TEAMS;
+      function handleEvent(evt) {
+        const { type, data } = evt;
+        switch(type) {
+          case 'FULL_STATUS':
+            renderFullStatus(data);
+            break;
+          case 'NEXT_TURN':
+            updateCurrent(data);
+            break;
+          case 'DRAFT_ENDED':
+            currentEl.textContent = '選秀結束';
+            playersEl.innerHTML = '';
+            passBtn.disabled = true;
+            break;
+        }
+      }
 
-    function initWebSocket() {
-      ws = new WebSocket(`ws://${location.host}/ws/draft`);
-      ws.onmessage = e => handleEvent(JSON.parse(e.data));
-      // … 其余同前 …
-    }
+      function renderFullStatus(status) {
+        updateCurrent(status.currentTeam);
+        renderPlayersByPosition(status.availablePlayers);
+        renderPicksTable(teams, status.picks);
+      }
 
-    function handleEvent(evt) {
-      const { type, data } = evt;
-      switch(type) {
-        case 'FULL_STATUS':
-          renderFullStatus(data);
-          break;
-        case 'NEXT_TURN':
-          updateCurrent(data);
-          break;
-        case 'DRAFT_ENDED':
+      function updateCurrent(team) {
+        if (team) {
+          currentEl.textContent = `${team.id} - ${team.name}`;
+          passBtn.disabled = (team.id !== currentTeamId);
+        } else {
           currentEl.textContent = '選秀結束';
-          playersEl.innerHTML = '';
           passBtn.disabled = true;
-          break;
+        }
       }
-    }
 
-    function renderFullStatus(status) {
-      updateCurrent(status.currentTeam);
-      renderPlayersByPosition(status.availablePlayers);
-      renderPicksTable(teams, status.picks);
-    }
-
-    function updateCurrent(team) {
-      if (team) {
-        currentEl.textContent = `${team.id} - ${team.name}`;
-        passBtn.disabled = (team.id !== currentTeamId);
-      } else {
-        currentEl.textContent = '選秀結束';
-        passBtn.disabled = true;
+      function renderPlayersByPosition(list) {
+        const grouped = list.reduce((acc, p) => {
+          (acc[p.position] = acc[p.position]||[]).push(p);
+          return acc;
+        }, {});
+        playersEl.innerHTML = '';
+        Object.entries(grouped).forEach(([pos, arr]) => {
+          const div = document.createElement('div');
+          div.innerHTML = `<strong>${pos} (${arr.length})</strong>`;
+          arr.forEach(p => {
+            const btn = document.createElement('button');
+            btn.textContent = `${p.id}:${p.name}`;
+            btn.disabled = (currentTeamId !== parseInt(currentEl.textContent));
+            btn.onclick = () => {
+              if (currentTeamId === parseInt(currentEl.textContent)) {
+                ws.send(JSON.stringify({ playerId: p.id }));
+              }
+            };
+            div.appendChild(btn);
+          });
+          playersEl.appendChild(div);
+        });
       }
-    }
 
-    // … 其余函数 renderPlayersByPosition、renderPicksTable、passBtn.onclick 保持一致 …
-    initWebSocket();
-  </script>
+      function renderPicksTable(teams, picks) {
+        const maxRound = Math.max(0, ...picks.map(p=>p.round));
+        const grid = [];
+        for (let r=1; r<=maxRound; r++) {
+          const row = teams.map(_=>null);
+          picks.filter(p=>p.round===r).forEach(p => {
+            const idx = teams.findIndex(t=>t.id===p.team.id);
+            row[idx] = p.player ? p.player.name : '放棄';
+          });
+          grid.push({ round: r, row });
+        }
+
+        const tbl = document.createElement('table');
+        const thead = document.createElement('thead');
+        const head = `<th>輪次</th>` + teams.map(t=>`<th>${t.name}</th>`).join('');
+        thead.innerHTML = `<tr>${head}</tr>`;
+        tbl.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        grid.forEach(({round,row}) => {
+          const cells = `<td>${round}</td>` + row.map(c=>`<td>${c||''}</td>`).join('');
+          const tr = document.createElement('tr');
+          tr.innerHTML = cells;
+          tbody.appendChild(tr);
+        });
+        tbl.appendChild(tbody);
+
+        tableCon.innerHTML = '';
+        tableCon.appendChild(tbl);
+      }
+
+      passBtn.onclick = () => {
+        if (currentTeamId === parseInt(currentEl.textContent)) {
+          ws.send(JSON.stringify({ playerId: null }));
+        }
+      };
+
+      initWebSocket();
+    </script>
+
+  </sec:authorize>
 </body>
 </html>

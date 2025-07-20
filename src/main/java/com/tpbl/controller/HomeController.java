@@ -1,34 +1,33 @@
-// src/main/java/com/tpbl/controller/HomeController.java
 package com.tpbl.controller;
 
+import com.tpbl.config.TeamUserDetails;
 import com.tpbl.model.Team;
 import com.tpbl.service.DraftService;
-import org.springframework.security.core.Authentication;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 
 @Controller
+@RequiredArgsConstructor
 public class HomeController {
 
     private final DraftService draftService;
 
-    public HomeController(DraftService draftService) {
-        this.draftService = draftService;
-    }
-
     @GetMapping("/")
-    public String home(Authentication authentication, Model model) {
-        // 拿到 Spring Security 的 username
-        String username = authentication.getName();
-        // 通过 service 查出对应的 Team
-        Team team = draftService.findTeamByUsername(username);
-
-        model.addAttribute("team", team);
-        model.addAttribute("order", draftService.getTeamOrder());
-        model.addAttribute("picks", draftService.allPicks());
-        // 你前端 JS 里会用到 teams 列表，传进来就好了
-        model.addAttribute("teams", draftService.getTeamOrder());
+    public String home(Model model,
+                       @AuthenticationPrincipal TeamUserDetails userDetails) {
+        Team me = userDetails.getTeam();
+        model.addAttribute("teamId", me.getId());
+        model.addAttribute("teamName", me.getName());
+        model.addAttribute("teams", draftService.getAllTeams());
         return "index";
     }
+
+    // ↓ 删除或注释掉这个方法 ↓
+    // @GetMapping("/login")
+    // public String login() {
+    //     return "login";
+    // }
 }
