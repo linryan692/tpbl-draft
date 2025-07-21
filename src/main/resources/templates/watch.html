@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8"/>
+  <title>TPBL 選秀大螢幕</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: 'Noto Sans TC', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    #message {
+      font-size: 3rem;
+      margin: 3rem 0;
+      position: relative;
+      min-height: 4rem;
+    }
+    /* 倒數環形 */
+    #countdown-svg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 120px;
+      height: 120px;
+      pointer-events: none;
+    }
+    #countdown-circle {
+      stroke: #1abc9c;
+      stroke-width: 6;
+      fill: none;
+      stroke-dasharray: 283;
+      stroke-dashoffset: 0;
+      transform-origin: center;
+    }
+    #countdown-text {
+      fill: #1abc9c;
+      font-size: 2rem;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+    .table-container {
+      margin-top: 2rem;
+      width: 80%;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #222;
+    }
+    th, td {
+      border: 1px solid #444;
+      padding: 0.5rem 1rem;
+    }
+    th {
+      background: #333;
+      font-size: 1.2rem;
+    }
+    td {
+      font-size: 1rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>TPBL 選秀大螢幕</h1>
+  <div id="message">連線中…</div>
+  <div class="table-container" id="table"></div>
+
+  <script>
+    const ws = new WebSocket(`ws://${location.host}/ws/draft`);
+    const msgEl = document.getElementById('message');
+    const tableEl = document.getElementById('table');
+
+    let nextTeamName = '';
+    let teams = [];
+    let picksByRound = {};
+    let animating = false;
+    let countdownInterval, resumeTimeout;
+
+    // 位置映射
+    const posMap = { P: '投手', C: '捕手', I: '內野手', O: '外野手' };
+
+    ws.onopen = () => {
+      msgEl.textContent = '等待指名…';
+    };
+
+    ws.onmessage = e => {
+      const evt = JSON.parse(e.data);
+      switch(evt.type) {
+        case 'FULL_STATUS':
+          teams = evt.data.teams;
+          rebuildPicks(evt.data.picks);
+          displayRoundTable(getLastRound());
+          break;
+        case 'NEXT_TURN':
+          nextTeamName = evt.data.name;
+          if (!animating) {
+            setMessage(`${nextTeamName} 指名中…`);
+          }
+          break;
+        case 'NEW_PICK':
+          handleNewPick(evt.data);
+          break;
+        case 'DRAFT_ENDED':
+          setMessage('選秀結束');
+          break;
+      }
+    };
+
+    function setMessage(text) {
+      clearAnimations();
+      msgEl.innerHTML = text;
+    }
+
+    function handleNewPick(pick) {
+      animating = true;
+      clearAnimations();
+      const isPass = !pick.player;
+      const round = pick.round;
+
+      if (isPass) {
+        // 放棄指名
+        setMessage(`【${pick.team.name}】 結束指名`);
+        addPick(pick);
+        displayRoundTable(round);
+        // 5 秒後恢復下一隊指名狀態
+        resumeTimeout = setTimeout(() => {
+          animating = false;
+          setMessage(`${nextTeamName} 指名中…`);
+        }, 5000);
+      } else {
+        // 正常指名 + 3 秒倒數
+        const text = `【${pick.team.name}】 指名了 ${posMap[pick.player.position]} ${pick.player.name}（前隊：${pick.player.lastTeam}）`;
+        msgEl.textContent = text;
+        // 建立 SVG 倒數圈
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('id', 'countdown-svg');
+        svg.setAttribute('viewBox', '0 0 100 100');
+        svg.innerHTML = `
+          <circle id="countdown-circle" cx="50" cy="50" r="45" />
+          <text id="countdown-text" x="50" y="55">3</text>
+        `;
+        msgEl.appendChild(svg);
+
+        addPick(pick);
+
+        let sec = 3;
+        const circle = document.getElementById('countdown-circle');
+        const txt = document.getElementById('countdown-text');
+        const total = 283;
+        countdownInterval = setInterval(() => {
+          sec--;
+          txt.textContent = sec > 0 ? sec : '';
+          circle.style.strokeDashoffset = ((3 - sec) / 3) * total;
+          if (sec <= 0) {
+            clearInterval(countdownInterval);
+            displayRoundTable(round);
+            // 5 秒後恢復下一隊指名中
+            resumeTimeout = setTimeout(() => {
+              animating = false;
+              setMessage(`${nextTeamName} 指名中…`);
+            }, 5000);
+          }
+        }, 1000);
+      }
+    }
+
+    function clearAnimations() {
+      clearInterval(countdownInterval);
+      clearTimeout(resumeTimeout);
+      const ex = document.getElementById('countdown-svg');
+      if (ex) ex.remove();
+    }
+
+    function rebuildPicks(picks) {
+      picksByRound = {};
+      picks.forEach(p => addPick(p));
+    }
+
+    function addPick(pick) {
+      if (!picksByRound[pick.round]) picksByRound[pick.round] = [];
+      picksByRound[pick.round].push(pick);
+    }
+
+    function getLastRound() {
+      return Math.max(...Object.keys(picksByRound).map(r => parseInt(r)));
+    }
+
+    function displayRoundTable(round) {
+      const row = picksByRound[round] || [];
+      let html = `<h2>第 ${round} 輪 指名結果</h2>
+        <table>
+          <thead><tr><th>隊名</th><th>指名/放棄</th></tr></thead>
+          <tbody>`;
+      teams.forEach(t => {
+        const p = row.find(x => x.team.id === t.id);
+        html += `<tr>
+          <td>${t.name}</td>
+          <td>${p ? (p.player ? p.player.name : '放棄') : ''}</td>
+        </tr>`;
+      });
+      html += `  </tbody>
+        </table>`;
+      tableEl.innerHTML = html;
+    }
+  </script>
+</body>
+</html>

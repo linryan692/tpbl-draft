@@ -3,21 +3,22 @@ package com.tpbl.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.tpbl.config.TeamUserDetails;
 import com.tpbl.model.Pick;
 import com.tpbl.model.Team;
 import com.tpbl.service.DraftService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-import org.springframework.web.socket.*;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.stereotype.Component;           // ← 加回來
 import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
-
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-@Component
+@Component  // ← 這行缺了就不會被 Spring 掃描
 public class DraftWebSocketHandler extends TextWebSocketHandler {
 
     @Autowired
@@ -34,20 +35,17 @@ public class DraftWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        // 解析前端請求
         PickRequest req = mapper.readValue(message.getPayload(), PickRequest.class);
 
-        // 從 session attribute 拿出登入的 Team (透過 Spring Security HandshakeInterceptor)
         SecurityContext sc = (SecurityContext) session.getAttributes().get("SPRING_SECURITY_CONTEXT");
-        Team me = (Team) sc.getAuthentication().getPrincipal();// 如用 interceptor 放入的 key
+        TeamUserDetails ud = (TeamUserDetails) sc.getAuthentication().getPrincipal();
+        Team me = ud.getTeam();
 
-        // 驗證：只有輪到的隊伍可下指令
         Team current = draftService.currentTeam();
         if (me == null || current == null || !current.getId().equals(me.getId())) {
             return;
         }
 
-        // 執行指名或放棄
         Pick pick = draftService.makePick(me.getId(), req.playerId);
 
         broadcast(new DraftEvent("NEW_PICK", pick));
@@ -63,8 +61,6 @@ public class DraftWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessions.remove(session);
     }
-
-    // ----- helper methods -----
 
     private void sendFullStatus(WebSocketSession session) throws Exception {
         Status s = new Status();
@@ -92,14 +88,11 @@ public class DraftWebSocketHandler extends TextWebSocketHandler {
         broadcast(new DraftEvent("FULL_STATUS", s));
     }
 
-    // ---- DTOs ----
-
     private static class DraftEvent {
         public String type;
         public Object data;
         public DraftEvent(String type, Object data) {
-            this.type = type;
-            this.data = data;
+            this.type = type; this.data = data;
         }
     }
 
