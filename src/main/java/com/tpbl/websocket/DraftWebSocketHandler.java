@@ -8,17 +8,15 @@ import com.tpbl.model.Pick;
 import com.tpbl.model.Team;
 import com.tpbl.service.DraftService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;           // ← 加回來
+import org.springframework.stereotype.Component;
 import org.springframework.security.core.context.SecurityContext;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-@Component  // ← 這行缺了就不會被 Spring 掃描
+@Component
 public class DraftWebSocketHandler extends TextWebSocketHandler {
 
     @Autowired
@@ -36,9 +34,8 @@ public class DraftWebSocketHandler extends TextWebSocketHandler {
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         PickRequest req = mapper.readValue(message.getPayload(), PickRequest.class);
-
         SecurityContext sc = (SecurityContext) session.getAttributes().get("SPRING_SECURITY_CONTEXT");
-        TeamUserDetails ud = (TeamUserDetails) sc.getAuthentication().getPrincipal();
+        TeamUserDetails ud = (TeamUserDetails)sc.getAuthentication().getPrincipal();
         Team me = ud.getTeam();
 
         Team current = draftService.currentTeam();
@@ -47,7 +44,6 @@ public class DraftWebSocketHandler extends TextWebSocketHandler {
         }
 
         Pick pick = draftService.makePick(me.getId(), req.playerId);
-
         broadcast(new DraftEvent("NEW_PICK", pick));
         if (draftService.isDraftEnded()) {
             broadcast(new DraftEvent("DRAFT_ENDED", null));
@@ -64,10 +60,11 @@ public class DraftWebSocketHandler extends TextWebSocketHandler {
 
     private void sendFullStatus(WebSocketSession session) throws Exception {
         Status s = new Status();
-        s.teams = draftService.getTeamOrder();
-        s.currentTeam = draftService.currentTeam();
+        s.teamOrder = draftService.getTeamOrder();
+        s.allTeams  = draftService.getAllTeams();      // ← 新增
+        s.currentTeam      = draftService.currentTeam();
         s.availablePlayers = draftService.availablePlayers();
-        s.picks = draftService.allPicks();
+        s.picks            = draftService.allPicks();
         DraftEvent full = new DraftEvent("FULL_STATUS", s);
         session.sendMessage(new TextMessage(mapper.writeValueAsString(full)));
     }
@@ -81,23 +78,23 @@ public class DraftWebSocketHandler extends TextWebSocketHandler {
 
     private void broadcastFullStatusToAll() throws Exception {
         Status s = new Status();
-        s.teams = draftService.getTeamOrder();
-        s.currentTeam = draftService.currentTeam();
+        s.teamOrder        = draftService.getTeamOrder();
+        s.allTeams         = draftService.getAllTeams(); // ← 新增
+        s.currentTeam      = draftService.currentTeam();
         s.availablePlayers = draftService.availablePlayers();
-        s.picks = draftService.allPicks();
+        s.picks            = draftService.allPicks();
         broadcast(new DraftEvent("FULL_STATUS", s));
     }
 
     private static class DraftEvent {
         public String type;
         public Object data;
-        public DraftEvent(String type, Object data) {
-            this.type = type; this.data = data;
-        }
+        public DraftEvent(String type, Object data) { this.type = type; this.data = data; }
     }
 
     private static class Status {
-        public List<Team> teams;
+        public List<Team> teamOrder;
+        public List<Team> allTeams;               // ← 新增
         public Team currentTeam;
         public List<?> availablePlayers;
         public List<Pick> picks;

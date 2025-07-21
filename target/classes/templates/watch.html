@@ -4,213 +4,235 @@
   <meta charset="UTF-8"/>
   <title>TPBL 選秀大螢幕</title>
   <style>
-    body {
-      background: #111;
-      color: #eee;
-      font-family: 'Noto Sans TC', sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; font-family:'Noto Sans TC',sans-serif; }
+    #title { text-align:center; color:#fff; background:#222; font-size:2.5rem; padding:1rem 0; }
+    #stage {
+      position:relative; width:100%; height:calc(100% - 64px);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      transition:background 0.5s; color:#fff; text-align:center;
     }
-    h1 {
-      font-size: 3rem;
-      margin-bottom: 1rem;
+    #badge {
+      width:300px; height:300px; object-fit:contain;
+      border-radius:50%; background:#fff; margin-bottom:2rem;
     }
-    #message {
-      font-size: 3rem;
-      margin: 3rem 0;
-      position: relative;
-      min-height: 4rem;
+    #info {
+      font-size:2rem; background:rgba(0,0,0,0.4);
+      padding:0.8rem 1.6rem; border-radius:8px; margin-bottom:2rem;
     }
-    /* 倒數環形 */
-    #countdown-svg {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 120px;
-      height: 120px;
-      pointer-events: none;
+    #countdown {
+      display:none; position:absolute; width:240px; height:240px;
     }
-    #countdown-circle {
-      stroke: #1abc9c;
-      stroke-width: 6;
-      fill: none;
-      stroke-dasharray: 283;
-      stroke-dashoffset: 0;
-      transform-origin: center;
+    #countdown circle {
+      stroke:#fff; stroke-width:10; fill:none;
+      stroke-dasharray:283; stroke-dashoffset:283;
+      transform:rotate(-90deg); transform-origin:center;
     }
-    #countdown-text {
-      fill: #1abc9c;
-      font-size: 2rem;
-      text-anchor: middle;
-      dominant-baseline: middle;
+    #countdown text {
+      fill:#fff; font-size:3.5rem;
+      text-anchor:middle; dominant-baseline:middle;
     }
-    .table-container {
-      margin-top: 2rem;
-      width: 80%;
+    #player-view {
+      display:none; flex-direction:column; align-items:center; justify-content:center;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #222;
+    #player-pic {
+      width:300px; height:300px; border-radius:50%;
+      border:6px solid #fff; margin-bottom:2rem; object-fit:cover;
     }
-    th, td {
-      border: 1px solid #444;
-      padding: 0.5rem 1rem;
+    #player-info {
+      font-size:2rem; background:rgba(0,0,0,0.4);
+      padding:0.8rem 1.6rem; border-radius:8px;
     }
-    th {
-      background: #333;
-      font-size: 1.2rem;
+    #table-view {
+      position:absolute; top:0; left:0; width:100%; height:100%;
+      background:#111; color:#fff; display:none; padding-top:64px; overflow:auto;
     }
-    td {
-      font-size: 1rem;
-      text-align: center;
+    #table-view h2 { text-align:center; margin:1rem 0; font-size:2rem; }
+    #table-view table {
+      margin:0 auto; border-collapse:collapse; width:80%; font-size:1rem;
     }
+    #table-view th, #table-view td {
+      border:1px solid #444; padding:0.6rem; text-align:center;
+    }
+    #table-view th { background:#222; }
   </style>
 </head>
 <body>
-  <h1>TPBL 選秀大螢幕</h1>
-  <div id="message">連線中…</div>
-  <div class="table-container" id="table"></div>
+  <div id="title">TPBL 選秀大螢幕</div>
+  <div id="stage">
+    <!-- 隊徽 + 狀態 -->
+    <img id="badge" src="" alt="隊徽" />
+    <div id="info">連線中…</div>
+    <!-- 倒數動畫 -->
+    <svg id="countdown" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="45"></circle>
+      <text x="50" y="55">3</text>
+    </svg>
+    <!-- 球員畫面 -->
+    <div id="player-view">
+      <img id="player-pic" src="" alt="球員" />
+      <div id="player-info"></div>
+    </div>
+    <!-- 輪次表格 -->
+    <div id="table-view">
+      <h2 id="round-title">第 X 輪 指名結果</h2>
+      <table>
+        <thead><tr><th>隊名</th><th>指名／放棄</th></tr></thead>
+        <tbody id="result-body"></tbody>
+      </table>
+    </div>
+  </div>
 
   <script>
     const ws = new WebSocket(`ws://${location.host}/ws/draft`);
-    const msgEl = document.getElementById('message');
-    const tableEl = document.getElementById('table');
+    const stage      = document.getElementById('stage');
+    const badge      = document.getElementById('badge');
+    const info       = document.getElementById('info');
+    const countdown  = document.getElementById('countdown');
+    const cdCircle   = countdown.querySelector('circle');
+    const cdText     = countdown.querySelector('text');
+    const playerView = document.getElementById('player-view');
+    const playerPic  = document.getElementById('player-pic');
+    const playerInfo = document.getElementById('player-info');
+    const tableView  = document.getElementById('table-view');
+    const roundTitle = document.getElementById('round-title');
+    const resultBody = document.getElementById('result-body');
 
-    let nextTeamName = '';
-    let teams = [];
-    let picksByRound = {};
-    let animating = false;
-    let countdownInterval, resumeTimeout;
-
-    // 位置映射
-    const posMap = { P: '投手', C: '捕手', I: '內野手', O: '外野手' };
-
-    ws.onopen = () => {
-      msgEl.textContent = '等待指名…';
+    // username → color map
+    const teamColors = {
+      cy:'#009966', lm:'#66CCFF', ct:'#999999',
+      yd:'#9966CC', asus:'#CC0000', ss:'#FFCC00',
+      fb:'#003366', uni:'#FF6600'
     };
 
-    ws.onmessage = e => {
-      const evt = JSON.parse(e.data);
-      switch(evt.type) {
-        case 'FULL_STATUS':
-          teams = evt.data.teams;
-          rebuildPicks(evt.data.picks);
-          displayRoundTable(getLastRound());
-          break;
-        case 'NEXT_TURN':
-          nextTeamName = evt.data.name;
-          if (!animating) {
-            setMessage(`${nextTeamName} 指名中…`);
-          }
-          break;
-        case 'NEW_PICK':
-          handleNewPick(evt.data);
-          break;
-        case 'DRAFT_ENDED':
-          setMessage('選秀結束');
-          break;
+    let teams=[], picksByRound={}, nextTeam=null;
+    let animating=false, bufferNext=null;
+
+    ws.onopen = ()=> showBadge('等待指名…');
+
+    ws.onmessage = e=>{
+      const {type,data} = JSON.parse(e.data);
+
+      if (type==='FULL_STATUS') {
+        teams = data.allTeams;
+        picksByRound={};
+        data.picks.forEach(p=>{
+          (picksByRound[p.round]||(picksByRound[p.round]=[])).push(p);
+        });
+        if (!animating) {
+          nextTeam = data.currentTeam;
+          showBadge(`【${nextTeam.name}】 指名中…`);
+        }
+      }
+
+      else if (type==='NEW_PICK') {
+        animating = true;
+        playPickFlow(data);
+      }
+
+      else if (type==='NEXT_TURN') {
+        if (animating) bufferNext = data;
+        else {
+          nextTeam = data;
+          showBadge(`【${nextTeam.name}】 指名中…`);
+        }
+      }
+
+      else if (type==='DRAFT_ENDED') {
+        animating = false;
+        showBadge('選秀結束');
       }
     };
 
-    function setMessage(text) {
-      clearAnimations();
-      msgEl.innerHTML = text;
+    // 顯示「球團指名中…」畫面
+    function showBadge(text) {
+      badge.style.display      = 'block';
+      info.style.display       = 'block';
+      countdown.style.display  = 'none';
+      playerView.style.display = 'none';
+      tableView.style.display  = 'none';
+
+      stage.style.background   = teamColors[nextTeam.username]||'#333';
+      badge.src                = `/images/badges/${nextTeam.username}.png`;
+      info.textContent         = text;
     }
 
-    function handleNewPick(pick) {
-      animating = true;
-      clearAnimations();
-      const isPass = !pick.player;
-      const round = pick.round;
+    // 選秀流程：倒數3秒 → 顯示球員或「結束指名」 → 等5秒 → 顯示表格
+    function playPickFlow(pick) {
+      badge.style.display      = 'none';
+      info.style.display       = 'none';
+      countdown.style.display  = 'block';
+      playerView.style.display = 'none';
+      tableView.style.display  = 'none';
 
-      if (isPass) {
-        // 放棄指名
-        setMessage(`【${pick.team.name}】 結束指名`);
-        addPick(pick);
-        displayRoundTable(round);
-        // 5 秒後恢復下一隊指名狀態
-        resumeTimeout = setTimeout(() => {
-          animating = false;
-          setMessage(`${nextTeamName} 指名中…`);
-        }, 5000);
+      let sec=3, total=2*Math.PI*45;
+      cdCircle.style.strokeDashoffset = total;
+      cdText.textContent = '3';
+
+      const iv = setInterval(()=>{
+        sec--;
+        cdText.textContent = sec>0?sec:'';
+        cdCircle.style.strokeDashoffset = (sec/3)*total;
+        if (sec<=0) {
+          clearInterval(iv);
+          showPlayer(pick);
+        }
+      },1000);
+    }
+
+    // 顯示「球員畫面」or 放棄
+    function showPlayer(pick) {
+      countdown.style.display  = 'none';
+      badge.style.display      = 'none';
+      info.style.display       = 'none';
+      playerView.style.display = 'flex';
+      tableView.style.display  = 'none';
+
+      stage.style.background = teamColors[pick.team.username]||'#333';
+      // 如果 pick.player 為 null，就是放棄
+      if (!pick.player) {
+        playerPic.src = `/images/icons/skip.png`; // 放棄 icon 或你自己放
+        playerInfo.textContent = `【${pick.team.name}】 結束指名`;
       } else {
-        // 正常指名 + 3 秒倒數
-        const text = `【${pick.team.name}】 指名了 ${posMap[pick.player.position]} ${pick.player.name}（前隊：${pick.player.lastTeam}）`;
-        msgEl.textContent = text;
-        // 建立 SVG 倒數圈
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('id', 'countdown-svg');
-        svg.setAttribute('viewBox', '0 0 100 100');
-        svg.innerHTML = `
-          <circle id="countdown-circle" cx="50" cy="50" r="45" />
-          <text id="countdown-text" x="50" y="55">3</text>
-        `;
-        msgEl.appendChild(svg);
-
-        addPick(pick);
-
-        let sec = 3;
-        const circle = document.getElementById('countdown-circle');
-        const txt = document.getElementById('countdown-text');
-        const total = 283;
-        countdownInterval = setInterval(() => {
-          sec--;
-          txt.textContent = sec > 0 ? sec : '';
-          circle.style.strokeDashoffset = ((3 - sec) / 3) * total;
-          if (sec <= 0) {
-            clearInterval(countdownInterval);
-            displayRoundTable(round);
-            // 5 秒後恢復下一隊指名中
-            resumeTimeout = setTimeout(() => {
-              animating = false;
-              setMessage(`${nextTeamName} 指名中…`);
-            }, 5000);
-          }
-        }, 1000);
+        playerPic.src = `/images/players/${pick.player.id}.jpg`;
+        playerInfo.textContent = `【${pick.team.name}】 指名${
+          {P:'投手',C:'捕手',I:'內野手',O:'外野手'}[pick.player.position]
+        } ${pick.player.name}（前隊：${pick.player.lastTeam}）`;
       }
+
+      // 更新
+      (picksByRound[pick.round]||(picksByRound[pick.round]=[])).push(pick);
+
+      // 等 5 秒後秀表格
+      setTimeout(()=> showTable(pick.round), 5000);
     }
 
-    function clearAnimations() {
-      clearInterval(countdownInterval);
-      clearTimeout(resumeTimeout);
-      const ex = document.getElementById('countdown-svg');
-      if (ex) ex.remove();
-    }
+    // 顯示本輪表格，10秒後才跳下一隊
+    function showTable(round) {
+      countdown.style.display  = 'none';
+      badge.style.display      = 'none';
+      info.style.display       = 'none';
+      playerView.style.display = 'none';
+      tableView.style.display  = 'block';
 
-    function rebuildPicks(picks) {
-      picksByRound = {};
-      picks.forEach(p => addPick(p));
-    }
-
-    function addPick(pick) {
-      if (!picksByRound[pick.round]) picksByRound[pick.round] = [];
-      picksByRound[pick.round].push(pick);
-    }
-
-    function getLastRound() {
-      return Math.max(...Object.keys(picksByRound).map(r => parseInt(r)));
-    }
-
-    function displayRoundTable(round) {
-      const row = picksByRound[round] || [];
-      let html = `<h2>第 ${round} 輪 指名結果</h2>
-        <table>
-          <thead><tr><th>隊名</th><th>指名/放棄</th></tr></thead>
-          <tbody>`;
-      teams.forEach(t => {
-        const p = row.find(x => x.team.id === t.id);
-        html += `<tr>
-          <td>${t.name}</td>
-          <td>${p ? (p.player ? p.player.name : '放棄') : ''}</td>
-        </tr>`;
+      roundTitle.textContent = `第 ${round} 輪 指名結果`;
+      resultBody.innerHTML = '';
+      teams.forEach(t=>{
+        const tr = document.createElement('tr');
+        const p = (picksByRound[round]||[]).find(x=>x.team.username===t.username);
+        const txt = p? (p.player? p.player.name : '放棄') : '';
+        tr.innerHTML = `<td>${t.name}</td><td>${txt}</td>`;
+        resultBody.appendChild(tr);
       });
-      html += `  </tbody>
-        </table>`;
-      tableEl.innerHTML = html;
+
+      setTimeout(()=>{
+        animating = false;
+        if (bufferNext) {
+          nextTeam = bufferNext;
+          bufferNext = null;
+          showBadge(`【${nextTeam.name}】 指名中…`);
+        }
+      },10000);
     }
   </script>
 </body>

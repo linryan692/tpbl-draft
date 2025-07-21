@@ -14,7 +14,7 @@
     /* 頂欄 */
     .navbar { color:#fff; padding:1rem; display:flex; justify-content:space-between; align-items:center; }
     .navbar a { color:rgba(255,255,255,0.8); text-decoration:none; }
-    
+
     .container { width:90%; max-width:1200px; margin:2rem auto; }
 
     /* 區塊卡片 */
@@ -56,8 +56,7 @@
       <script th:inline="javascript">
         /*<![CDATA[*/
         window.CURRENT_TEAM_ID = /*[[${teamId}]]*/ 0;
-        window.ALL_TEAMS      = /*[[${teams}]]*/ [];
-        window.TEAM_NAME      = '/*[[${teamName}]]*/';
+        window.TEAM_NAME       = /*[['${teamName}']]*/ '球團';
         /*]]>*/
       </script>
 
@@ -83,28 +82,34 @@
   </div>
 
   <script>
-    // 導覽列配色
-    const colors = {
-      '富邦悍將':'#003366','華碩天際龍':'#CC0000','統一獅':'#FF6600',
-      'Lamigo桃猿':'#66CCFF','三商虎':'#FFCC00','崇越隼鷹':'#009966',
-      '遠東獵狐':'#9966CC','國泰犀牛':'#999999'
-    };
-    const nav = document.getElementById('navbar');
-    nav.style.background = colors[window.TEAM_NAME] || '#2c3e50';
+    document.addEventListener('DOMContentLoaded', ()=> {
+      // NAVBAR 根據 TEAM_NAME 設色
+      const teamColors = {
+        '富邦悍將': '#003366',
+        '華碩天際龍': '#CC0000',
+        '統一獅': '#FF6600',
+        'Lamigo桃猿': '#66CCFF',
+        '三商虎': '#FFCC00',
+        '崇越隼鷹': '#009966',
+        '遠東獵狐': '#9966CC',
+        '國泰犀牛': '#999999'
+      };
+      const nav = document.getElementById('navbar');
+      const tnm = window.TEAM_NAME;
+      nav.style.background = teamColors[tnm] || '#2c3e50';
+    });
 
-    const currentEl = document.getElementById('current-team');
-    const playersEl = document.getElementById('players-list');
-    const tableEl   = document.getElementById('picks-table-container');
-    const passBtn   = document.getElementById('pass-btn');
-
-    let ws, myTeamId = window.CURRENT_TEAM_ID, currentTurnId;
-    const allTeams = window.ALL_TEAMS;  // 永遠完整隊伍列表
-    const posMap   = { P:'投手', I:'內野手', O:'外野手', C:'捕手' };
+    const currentEl   = document.getElementById('current-team');
+    const playersEl   = document.getElementById('players-list');
+    const tableCon    = document.getElementById('picks-table-container');
+    const passBtn     = document.getElementById('pass-btn');
+    const posMap      = { P:'投手', I:'內野手', O:'外野手', C:'捕手' };
+    let ws, myTeamId  = window.CURRENT_TEAM_ID, currentTurnId = null;
 
     function initWebSocket() {
       ws = new WebSocket(`ws://${location.host}/ws/draft`);
       ws.onopen    = () => console.log('WS 已連線');
-      ws.onerror   = err => console.error(err);
+      ws.onerror   = e => console.error(e);
       ws.onmessage = e => handleEvent(JSON.parse(e.data));
     }
 
@@ -114,51 +119,49 @@
       else if (type==='NEXT_TURN')   updateCurrent(data);
       else if (type==='DRAFT_ENDED') {
         currentEl.textContent = '選秀結束';
-        playersEl.innerHTML = '';
-        passBtn.disabled = true;
+        playersEl.innerHTML   = '';
+        passBtn.disabled      = true;
       }
     }
 
-    function renderFullStatus(s) {
-      currentTurnId = s.currentTeam?.id || null;
-      updateCurrent(s.currentTeam);
-      renderPlayers(s.availablePlayers);
-      renderPicks(allTeams, s.picks);
+    function renderFullStatus(status) {
+      currentTurnId = status.currentTeam?.id || null;
+      updateCurrent(status.currentTeam);
+      renderPlayersByPosition(status.availablePlayers);
+      renderPicksTable(status.allTeams, status.picks);  // ← 改成 allTeams
     }
 
     function updateCurrent(team) {
       if (team) {
         currentEl.textContent = team.name;
-        passBtn.disabled = team.id !== myTeamId;
+        passBtn.disabled      = (team.id !== myTeamId);
       } else {
         currentEl.textContent = '選秀結束';
-        passBtn.disabled = true;
+        passBtn.disabled      = true;
       }
     }
 
-    function renderPlayers(list) {
+    function renderPlayersByPosition(list) {
       playersEl.innerHTML = '';
       const groups = list.reduce((acc,p)=>{
         (acc[p.position] = acc[p.position]||[]).push(p);
         return acc;
       }, {});
       ['P','I','O','C'].forEach(code=>{
-        const arr = groups[code] || [];
+        const arr = groups[code]||[];
         if (!arr.length) return;
         const title = document.createElement('div');
-        title.className = 'group-title';
+        title.className   = 'group-title';
         title.textContent = `${posMap[code]} (${arr.length})`;
         playersEl.appendChild(title);
         arr.forEach(p=>{
           const btn = document.createElement('button');
-          btn.className = 'btn-pick';
+          btn.className   = 'btn-pick';
           btn.textContent = p.name;
-          btn.disabled = currentTurnId !== myTeamId;
-          btn.onclick = () => {
-            if (currentTurnId === myTeamId) {
-              if (!confirm(`確定要指名 ${p.name} 嗎？`)) return;
+          btn.disabled    = (currentTurnId !== myTeamId);
+          btn.onclick     = () => {
+            if (currentTurnId===myTeamId && confirm(`確定要指名 ${p.name} 嗎？`)) {
               btn.textContent = '…Loading…';
-              btn.disabled = true;
               ws.send(JSON.stringify({ playerId: p.id }));
             }
           };
@@ -167,32 +170,27 @@
       });
     }
 
-    function renderPicks(teams, picks) {
+    function renderPicksTable(allTeams, picks) {
       const maxR = Math.max(0, ...picks.map(p=>p.round));
       let html = '<table><thead><tr><th>輪次</th>' +
-        teams.map(t=>`<th>${t.name}</th>`).join('') +
+        allTeams.map(t=>`<th>${t.name}</th>`).join('') +
         '</tr></thead><tbody>';
-
       for (let r=1; r<=maxR; r++) {
         html += `<tr><td>${r}</td>`;
-        teams.forEach(t=>{
-          const pk = picks.find(p=>p.round===r && p.team.id===t.id);
-          html += `<td>${ pk 
-                            ? (pk.player?.name||'結束指名') 
-                            : '' }</td>`;
+        allTeams.forEach(t=>{
+          const pick = picks.find(p=>p.round===r && p.team.id===t.id);
+          html += `<td>${pick ? (pick.player?.name||'放棄') : ''}</td>`;
         });
         html += '</tr>';
       }
-
       html += '</tbody></table>';
-      tableEl.innerHTML = html;
+      tableCon.innerHTML = html;
     }
 
-    passBtn.onclick = () => {
+    passBtn.onclick = ()=>{
       if (currentTurnId===myTeamId && confirm('確定要放棄整個選秀？')) {
-        ws.send(JSON.stringify({ playerId: null }));
         passBtn.textContent = '…Loading…';
-        passBtn.disabled = true;
+        ws.send(JSON.stringify({ playerId: null }));
       }
     };
 
